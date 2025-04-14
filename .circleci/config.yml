@@ -1,49 +1,84 @@
-# This config was automatically generated from your source code
-# Stacks detected: cicd:gitlab-workflows:.,deps:node:.,deps:python:.,file:manage.py:.
-version: 2.1
-orbs:
-  node: circleci/node@5
-  python: circleci/python@2
 jobs:
-  test-node:
-    # Install node dependencies and run tests
-    executor: node/default
+  build:
+    docker:
+      - image: python:3.6                   # similar to "image" in GitLab
     steps:
       - checkout
-      - node/install-packages:
-          cache-path: ~/project/node_modules
-          override-ci-command: npm install
-      - run:
-          name: Run tests
-          command: npm test --passWithNoTests
-  test-python:
-    # Install dependencies and run tests
+      - run: |                              # similar to "script" in GitLab
+          pip install -r requirements.txt
+          python manage.py check
+
+  test:
     docker:
-      - image: cimg/python:3.8-node
+      - image: python:3.6
     steps:
       - checkout
-      - python/install-packages
-      - run:
-          name: Run tests
-          command: python manage.py test
-  deploy:
-    # This is an example deploy job, not actually used by the workflow
+      - run: |
+          pip install -r requirements.txt
+          python manage.py test taskManager
+
+  integration:
     docker:
-      - image: cimg/base:stable
+      - image: python:3.6
     steps:
-      # Replace this with steps to deploy to users
+      - checkout
       - run:
-          name: deploy
-          command: '#e.g. ./deploy.sh'
-      - run:
-          name: found gitlab workflows config
-          command: ':'
+          command: |
+            echo "This is an integration step"
+            exit 1
+          when: on_fail      # Even if the job fails, continue to the next jobs
+
+  prod:
+    docker:
+      - image: python:3.6
+    steps:
+      - checkout
+      - run: echo "This is a deploy step"
+
+  artifact:
+    docker:
+      - image: python:3.6
+    steps:
+      - checkout
+      - run: echo "hello" > hello.txt
+      - store_artifacts:
+          path: hello.txt
+          destination: artifact-file
+
 workflows:
-  build-and-test:
+  version: 2
+  django:
     jobs:
-      - test-node
-      - test-python
-    # - deploy:
-    #     requires:
-    #       - test-node
-    #       - test-python
+      - build:
+          filters:          # Run the job with a specific branch
+            branches:
+              only:
+                - main
+      - test:
+          requires:
+            - build
+          filters:
+            branches:
+              only:
+                - main
+      - integration:
+          requires:
+            - test
+          filters:
+            branches:
+              only:
+                - main
+      - prod:
+          requires:
+            - integration
+          filters:
+            branches:
+              only:
+                - main
+      - artifact:
+          requires:
+            - prod
+          filters:
+            branches:
+              only:
+                - main
